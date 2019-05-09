@@ -147,7 +147,7 @@ function! ag#Ag(args, relative, bang) " {{{
       " we need to use the jumplist) and open the quickfix window.
       else
         exec "normal! \<c-o>"
-        copen
+        vert lopen
       endif
     endif
     silent! doautocmd QuickFixCmdPost grep
