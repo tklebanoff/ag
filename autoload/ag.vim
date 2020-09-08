@@ -62,6 +62,139 @@ set cpo&vim
     \ ]
 " }}}
 
+function! ag#AgPath(args, relative, bang) " {{{
+  if !executable('ag')
+    call s:Echo("'ag' not found on your system path.", 'Error')
+    return
+  endif
+
+  if a:relative
+    let cwd = getcwd()
+    exec 'cd ' . expand('%:p:h')
+  endif
+
+  if empty(a:args)
+    let args = s:ParseArgs("\\<" . expand("<cword>") . "\\>")
+  else
+    let args = s:ParseArgs(a:args)
+  end
+  " if pattern and dir supplied, see if dir is a glob pattern
+  let [options, non_option_args] = s:SplitOptionsFromArgs(args)
+  if len(non_option_args) == 2
+    let dir = non_option_args[-1]
+    if dir =~ '%'
+      let toexpand = substitute(dir, '.\{-}\(%\(:[phtre]\)*\).*', '\1', '')
+      let dir = substitute(dir, toexpand, expand(toexpand), '')
+    endif
+
+    " ag seems to only support a dir arg, so if a file path is supplied tweak
+    " it to be a dir with a file filter
+    if filereadable(dir)
+      let path = fnamemodify(dir, ':h')
+      let file = fnamemodify(dir, ':t')
+      let args = options + ['-G', file, '--depth', '0'] + non_option_args[:-2] + [path]
+
+    " globs
+    elseif dir =~ '\*'
+      let dir = escape(dir, '.')
+      let parts = split(dir, '\*\{2,}')
+      let parts = map(parts, 'substitute(v:val, "*", "[^/]*", "g")')
+      let pattern = join(parts, '.*')
+      if dir =~ '^\*\{2,}'
+        let pattern = '.*' . pattern
+      endif
+      let args = options + ['-G', pattern . '$'] + non_option_args[:-2]
+    endif
+  endif
+
+  " If there is no tty (which is the case when calling ag via system), ag will
+  " default to searching stdin, so force it to search files via the
+  " --search-files arg: https://github.com/ggreer/the_silver_searcher/issues/57
+  let cmd = 'ag --search-files --column ' .
+    \ (g:AgSmartCase ? '--smart-case ' : '') .
+    \ join(map(copy(args), 'shellescape(v:val)'), ' ') .
+    \ ( ' `/bin/cat .agpath`' )
+
+  let saveerrorformat = &errorformat
+  try
+    silent! doautocmd QuickFixCmdPre grep
+    if index(args, '-g') != -1
+      set errorformat=%-GERR:%.%#,%f,%-G%.%#
+    else
+      set errorformat=%-GERR:%.%#,%f:%l:%c:%m,%-G%.%#
+    endif
+
+    if &verbose
+      echom "Ag: executing" cmd
+    endif
+    cexpr system(cmd)
+
+    " TODO: If/When Christian Brabandt's qf title patch is applied, then we
+    " can enable the below code accordingly to set a persistent quickfix
+    " title.
+    "if v:version > 70X || (v:version == 70X && haspatch("patchXYZ"))
+    "  let qftitle = 'ag ' . join(args)
+    "  call setqflist(getqflist(), 'r', qftitle)
+    "endif
+
+    if len(getqflist())
+      " open up the fold on the first result
+      if a:bang == ''
+        normal! zv
+        silent! doautocmd WinEnter
+
+      " if the user doesn't want to jump to the first result, then navigate back
+      " to where they were (cexpr! just ignores changes to the current file, so
+      " we need to use the jumplist) and open the quickfix window.
+      else
+        exec "normal! \<c-o>"
+        vert copen
+      endif
+    endif
+    silent! doautocmd QuickFixCmdPost grep
+  catch /E325/
+    " vim handles this by prompting the user for how to proceed
+  finally
+    let &errorformat = saveerrorformat
+    if a:relative
+      exec 'cd ' . cwd
+    endif
+  endtry
+
+  if v:shell_error
+    " may be a bug in ag, but it is returning an error code on file name searches
+    " (-g <pattern>) when results are found
+    if index(args, '-g') != -1
+      let results = getqflist()
+      if len(results) && bufname(results[0].bufnr) !~ '^ag: '
+        return
+      endif
+      " our -g errorformat matches every line of ag's error message if there was
+      " a legitimate error, so jump back to the file the user was editing and
+      " clear the quickfix list
+      if a:bang == '' && len(results)
+        exec "normal! \<c-o>"
+      endif
+      call setqflist([], 'r')
+    endif
+
+    " note: an error code is return on no results as well.
+    let error = system(cmd)
+    if error != ''
+      call s:Echo(error, 'Error')
+      return
+    endif
+  endif
+
+  if len(getqflist()) == 0
+    call s:Echo('No results found: ' . cmd, 'WarningMsg')
+  endif
+endfunction " }}}
+
+
+
+
+
 function! ag#Ag(args, relative, bang) " {{{
   if !executable('ag')
     call s:Echo("'ag' not found on your system path.", 'Error')
