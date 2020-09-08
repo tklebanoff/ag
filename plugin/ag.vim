@@ -61,6 +61,10 @@ if exists(":AgRelative") != 2
   command -bang -nargs=* -complete=customlist,ag#CompleteRelative
     \ AgRelative :call ag#Ag(<q-args>, 1, '<bang>')
 endif
+if exists(":AgPath") != 2
+  command -bang -nargs=* -complete=customlist,ag#Complete
+    \ Ag :call ag#AgPath(<q-args>, 0, '<bang>')
+endif
 " }}}
 
 " allow ag to be used with eclim's :LocateFile
