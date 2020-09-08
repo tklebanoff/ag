@@ -63,7 +63,7 @@ if exists(":AgRelative") != 2
 endif
 if exists(":AgPath") != 2
   command -bang -nargs=* -complete=customlist,ag#Complete
-    \ Ag :call ag#AgPath(<q-args>, 0, '<bang>')
+    \ AgPath :call ag#AgPath(<q-args>, 0, '<bang>')
 endif
 " }}}
 
